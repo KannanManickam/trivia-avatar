@@ -14,7 +14,7 @@ const StartScreen: React.FC<StartScreenProps> = ({ onStartGame }) => {
     const tts = TextToSpeechService.getInstance();
     tts.speak("Let's begin the game! Are you ready?");
     
-    setTimeout(onStartGame, 1500);
+    setTimeout(onStartGame, 6000);
   };
 
   return (
