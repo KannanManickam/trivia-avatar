@@ -1,3 +1,4 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -35,19 +36,12 @@
     --radius: 0.5rem;
 
     --sidebar-background: 0 0% 98%;
-
     --sidebar-foreground: 240 5.3% 26.1%;
-
     --sidebar-primary: 240 5.9% 10%;
-
     --sidebar-primary-foreground: 0 0% 98%;
-
     --sidebar-accent: 240 4.8% 95.9%;
-
     --sidebar-accent-foreground: 240 5.9% 10%;
-
     --sidebar-border: 220 13% 91%;
-
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
 
@@ -96,6 +90,77 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-game-background text-game-text;
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+@layer components {
+  .question-container {
+    @apply my-6 p-6 rounded-xl bg-opacity-90 bg-game-secondary shadow-lg text-white;
+  }
+
+  .option-button {
+    @apply w-full p-4 mb-3 text-left rounded-lg transition-all duration-300 bg-opacity-80 flex items-center hover:bg-opacity-100;
+  }
+
+  .option-button:hover {
+    @apply transform scale-102 shadow-md;
+  }
+
+  .option-button.correct {
+    @apply bg-game-correct text-white;
+  }
+
+  .option-button.incorrect {
+    @apply bg-game-incorrect text-white;
+  }
+
+  .option-button.selected {
+    @apply border-2 border-white;
+  }
+
+  .timer-bar {
+    @apply h-2 rounded-full bg-game-primary transition-all duration-100;
+  }
+
+  .timer-bar.warning {
+    @apply bg-game-timerWarning animate-pulse-light;
+  }
+
+  .avatar-container {
+    @apply relative w-40 h-40 md:w-56 md:h-56 bg-game-accent rounded-full overflow-hidden border-4 border-game-primary shadow-lg;
+  }
+
+  .game-button {
+    @apply px-8 py-3 rounded-full bg-game-primary text-white font-bold transition-all 
+      hover:bg-game-secondary hover:shadow-lg focus:outline-none focus:ring-2 
+      focus:ring-game-accent focus:ring-opacity-50 transform hover:scale-105;
+  }
+
+  .game-card {
+    @apply bg-black bg-opacity-40 rounded-xl p-6 shadow-xl backdrop-blur-lg border border-game-primary border-opacity-30;
+  }
+
+  .avatar-mouth {
+    @apply absolute bottom-1/4 left-1/2 w-8 h-4 bg-gray-800 rounded-b-full -translate-x-1/2;
+  }
+
+  .avatar-mouth.talking {
+    @apply animate-talking;
+  }
+}
+
+@layer utilities {
+  .text-glow {
+    text-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
+  }
+  
+  .bg-gradient-game {
+    background: linear-gradient(135deg, #1A1F2C 0%, #2C243A 100%);
+  }
+  
+  .scale-102 {
+    transform: scale(1.02);
   }
 }
