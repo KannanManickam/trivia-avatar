@@ -14,8 +14,10 @@ const GameContainer: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(GameState.START);
   const [score, setScore] = useState(0);
   const [totalQuestions, setTotalQuestions] = useState(0);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
 
-  const handleStartGame = () => {
+  const handleStartGame = (categories: string[]) => {
+    setSelectedCategories(categories);
     setGameState(GameState.PLAYING);
   };
 
@@ -37,7 +39,11 @@ const GameContainer: React.FC = () => {
         )}
         
         {gameState === GameState.PLAYING && (
-          <GameScreen onGameEnd={handleGameEnd} />
+          <GameScreen 
+            onGameEnd={handleGameEnd} 
+            categories={selectedCategories}
+            timePerQuestion={12}
+          />
         )}
         
         {gameState === GameState.END && (

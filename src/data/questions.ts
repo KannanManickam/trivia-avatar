@@ -1,4 +1,3 @@
-
 export interface TriviaQuestion {
   id: number;
   question: string;
@@ -91,14 +90,23 @@ export const triviaQuestions: TriviaQuestion[] = [
   }
 ];
 
-export function getRandomQuestions(count: number): TriviaQuestion[] {
+export function getRandomQuestions(count: number, categories: string[] = []): TriviaQuestion[] {
+  let filteredQuestions = triviaQuestions;
+  
+  // Filter by selected categories if any are specified
+  if (categories.length > 0) {
+    filteredQuestions = triviaQuestions.filter(q => 
+      categories.includes(q.category.toLowerCase())
+    );
+  }
+  
   // Shuffle algorithm (Fisher-Yates)
-  const shuffled = [...triviaQuestions];
+  const shuffled = [...filteredQuestions];
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
   
-  // Return the first 'count' questions
-  return shuffled.slice(0, count);
+  // Return the first 'count' questions or all if there are fewer than requested
+  return shuffled.slice(0, Math.min(count, shuffled.length));
 }

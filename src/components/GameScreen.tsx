@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { TriviaQuestion, getRandomQuestions } from '../data/questions';
 import QuestionCard from './QuestionCard';
@@ -8,14 +7,16 @@ import { Button } from '@/components/ui/button';
 
 interface GameScreenProps {
   onGameEnd: (score: number, totalQuestions: number) => void;
+  categories: string[];
   questionCount?: number;
   timePerQuestion?: number;
 }
 
 const GameScreen: React.FC<GameScreenProps> = ({ 
   onGameEnd, 
+  categories,
   questionCount = 10,
-  timePerQuestion = 15
+  timePerQuestion = 12
 }) => {
   const [questions, setQuestions] = useState<TriviaQuestion[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -24,14 +25,12 @@ const GameScreen: React.FC<GameScreenProps> = ({
   const ttsService = TextToSpeechService.getInstance();
 
   useEffect(() => {
-    // Get random questions on component mount
-    const randomQuestions = getRandomQuestions(questionCount);
+    const randomQuestions = getRandomQuestions(questionCount, categories);
     setQuestions(randomQuestions);
     setIsLoading(false);
     
-    // Introduction
     ttsService.speak("Welcome to Quizzy Avatar Showdown! Get ready to test your knowledge. I'll be your host for today's trivia challenge.");
-  }, [questionCount]);
+  }, [questionCount, categories]);
 
   const handleAnswerSelected = (isCorrect: boolean) => {
     if (isCorrect) {
