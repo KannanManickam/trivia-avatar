@@ -43,7 +43,7 @@ const GameContainer: React.FC = () => {
           <GameScreen 
             onGameEnd={handleGameEnd} 
             categories={selectedCategories}
-            timePerQuestion={12}
+            timePerQuestion={30}
           />
         )}
         
