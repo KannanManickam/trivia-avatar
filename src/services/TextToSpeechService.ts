@@ -9,6 +9,8 @@ export class TextToSpeechService {
   private isSpeaking: boolean = false;
   private voicesLoaded: boolean = false;
   private pendingSpeech: { text: string; rate?: number; pitch?: number }[] = [];
+  private voiceLoadAttempts: number = 0;
+  private maxVoiceLoadAttempts: number = 10;
 
   private constructor() {
     this.synth = window.speechSynthesis;
@@ -19,8 +21,19 @@ export class TextToSpeechService {
     }
     
     // Initial attempt to load voices
+    this.attemptLoadVoices();
+  }
+
+  private attemptLoadVoices(): void {
     setTimeout(() => {
       this.loadVoices();
+      // If voices aren't loaded yet and we haven't exceeded max attempts, try again
+      if (!this.voicesLoaded && this.voiceLoadAttempts < this.maxVoiceLoadAttempts) {
+        this.voiceLoadAttempts++;
+        const delay = this.voiceLoadAttempts * 200; // Increasing delay between attempts
+        console.log(`Voice loading attempt ${this.voiceLoadAttempts}, retrying in ${delay}ms`);
+        setTimeout(() => this.attemptLoadVoices(), delay);
+      }
     }, 100);
   }
 
@@ -35,7 +48,7 @@ export class TextToSpeechService {
     // Get all available voices
     const availableVoices = this.synth.getVoices();
     
-    if (availableVoices.length > 0) {
+    if (availableVoices && availableVoices.length > 0) {
       this.voices = availableVoices;
       console.log('Available voices loaded:', this.voices.length);
       console.log('Voice examples:', this.voices.slice(0, 3).map(v => ({name: v.name, lang: v.lang})));
@@ -68,17 +81,19 @@ export class TextToSpeechService {
       this.voicesLoaded = true;
       
       // Process any pending speech requests
-      if (this.pendingSpeech.length > 0) {
-        console.log('Processing pending speech requests:', this.pendingSpeech.length);
-        this.pendingSpeech.forEach(speech => {
-          this.speak(speech.text, speech.rate, speech.pitch);
-        });
-        this.pendingSpeech = [];
+      this.processPendingSpeech();
+    }
+  }
+
+  private processPendingSpeech(): void {
+    if (this.pendingSpeech.length > 0) {
+      console.log('Processing pending speech requests:', this.pendingSpeech.length);
+      
+      // Process one speech request at a time to avoid Chrome issues
+      const nextSpeech = this.pendingSpeech.shift();
+      if (nextSpeech) {
+        this.speakImmediate(nextSpeech.text, nextSpeech.rate, nextSpeech.pitch);
       }
-    } else {
-      console.warn('No voices available yet, will retry');
-      // In some browsers (particularly Chrome), voices might not be available immediately
-      setTimeout(() => this.loadVoices(), 500);
     }
   }
 
@@ -91,24 +106,42 @@ export class TextToSpeechService {
   }
 
   public speak(text: string, rate = 1, pitch = 1): void {
+    console.log('Speak requested:', text.substring(0, 50) + (text.length > 50 ? '...' : ''));
+    
     if (!this.voicesLoaded || !this.selectedVoice) {
-      console.log('Voices not loaded yet, queuing speech:', text);
+      console.log('Voices not loaded yet, queuing speech:', text.substring(0, 50) + (text.length > 50 ? '...' : ''));
       this.pendingSpeech.push({ text, rate, pitch });
       return;
     }
 
-    // Cancel any current speech
-    this.stop();
+    // If currently speaking, queue this speech
+    if (this.isSpeaking || this.synth.speaking || this.synth.pending) {
+      console.log('Currently speaking, queuing next speech');
+      this.pendingSpeech.push({ text, rate, pitch });
+      return;
+    }
 
-    console.log(`Speaking with voice: ${this.selectedVoice.name}:`, text);
+    this.speakImmediate(text, rate, pitch);
+  }
+
+  private speakImmediate(text: string, rate = 1, pitch = 1): void {
+    // Cancel any current speech first
+    this.synth.cancel();
+    
+    console.log(`Speaking with voice: ${this.selectedVoice?.name}:`, text.substring(0, 50) + (text.length > 50 ? '...' : ''));
 
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.voice = this.selectedVoice;
+    
+    if (this.selectedVoice) {
+      utterance.voice = this.selectedVoice;
+    }
+    
     utterance.rate = rate;
     utterance.pitch = pitch;
+    utterance.volume = 1.0; // Ensure maximum volume
     
     utterance.onstart = () => {
-      console.log('Speech started:', text);
+      console.log('Speech started:', text.substring(0, 50) + (text.length > 50 ? '...' : ''));
       this.isSpeaking = true;
       this.onSpeakStartCallbacks.forEach(callback => callback());
     };
@@ -117,24 +150,56 @@ export class TextToSpeechService {
       console.log('Speech ended');
       this.isSpeaking = false;
       this.onSpeakEndCallbacks.forEach(callback => callback());
+      
+      // Process next queued speech item if any
+      setTimeout(() => this.processPendingSpeech(), 100);
     };
 
     utterance.onerror = (event) => {
       console.error('Speech error:', event);
       this.isSpeaking = false;
       this.onSpeakEndCallbacks.forEach(callback => callback());
+      
+      // Try to recover from error by processing next speech
+      setTimeout(() => this.processPendingSpeech(), 500);
     };
 
     // Fix for Chrome issue where speech might not start
-    this.synth.cancel();
     setTimeout(() => {
-      this.synth.speak(utterance);
-      
-      // Sometimes, in Chrome, we need to kick start the speech synthesis
-      if (!this.synth.speaking && !this.synth.pending) {
-        console.log('Speech synthesis not starting, attempting to restart');
+      try {
+        // Chrome requires this pattern in some cases
         this.synth.cancel();
-        setTimeout(() => this.synth.speak(utterance), 50);
+        this.synth.speak(utterance);
+        
+        // Chrome workaround - check if speech actually started
+        setTimeout(() => {
+          if (!this.synth.speaking && !this.isSpeaking) {
+            console.log('Speech synthesis not starting, attempting restart with alternative method');
+            
+            // Try an alternative approach
+            this.synth.cancel();
+            
+            // Create a fresh utterance
+            const newUtterance = new SpeechSynthesisUtterance(text);
+            if (this.selectedVoice) {
+              newUtterance.voice = this.selectedVoice;
+            }
+            newUtterance.rate = rate;
+            newUtterance.pitch = pitch;
+            newUtterance.volume = 1.0;
+            
+            // Same event handlers
+            newUtterance.onstart = utterance.onstart;
+            newUtterance.onend = utterance.onend;
+            newUtterance.onerror = utterance.onerror;
+            
+            // Try speaking again
+            this.synth.speak(newUtterance);
+          }
+        }, 250);
+      } catch (error) {
+        console.error('Exception during speech synthesis:', error);
+        this.isSpeaking = false;
       }
     }, 50);
   }
@@ -143,6 +208,7 @@ export class TextToSpeechService {
     if (this.synth) {
       this.synth.cancel();
       this.isSpeaking = false;
+      this.pendingSpeech = []; // Clear any pending speech
       this.onSpeakEndCallbacks.forEach(callback => callback());
     }
   }
