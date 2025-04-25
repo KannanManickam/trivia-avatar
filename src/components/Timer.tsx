@@ -10,6 +10,11 @@ interface TimerProps {
 const Timer: React.FC<TimerProps> = ({ duration, onTimeUp, isActive }) => {
   const [timeLeft, setTimeLeft] = useState(duration);
   
+  // Reset timer when question changes (duration or isActive changes)
+  useEffect(() => {
+    setTimeLeft(duration);
+  }, [duration, isActive]);
+  
   useEffect(() => {
     if (!isActive) return;
     
@@ -26,10 +31,6 @@ const Timer: React.FC<TimerProps> = ({ duration, onTimeUp, isActive }) => {
     
     return () => clearInterval(timer);
   }, [isActive, onTimeUp]);
-  
-  useEffect(() => {
-    setTimeLeft(duration);
-  }, [duration]);
 
   const percentage = (timeLeft / duration) * 100;
   const isWarning = timeLeft <= 5;

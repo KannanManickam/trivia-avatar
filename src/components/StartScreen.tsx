@@ -1,26 +1,29 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Avatar from './Avatar';
 import TextToSpeechService from '../services/TextToSpeechService';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { triviaQuestions } from '../data/questions';
 
 interface StartScreenProps {
   onStartGame: (categories: string[]) => void;
 }
 
-const CATEGORIES = [
-  { id: 'geography', label: 'Geography', icon: 'globe' },
-  { id: 'science', label: 'Science', icon: 'star' },
-  { id: 'history', label: 'History', icon: 'book' },
-  { id: 'arts', label: 'Arts', icon: 'music' },
-  { id: 'sports', label: 'Sports', icon: 'sports' },
-  { id: 'entertainment', label: 'Entertainment', icon: 'film' },
-] as const;
-
 const StartScreen: React.FC<StartScreenProps> = ({ onStartGame }) => {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const tts = TextToSpeechService.getInstance();
+  const [availableCategories, setAvailableCategories] = useState<{id: string, label: string}[]>([]);
+
+  // Extract unique categories from question data
+  useEffect(() => {
+    const categories = Array.from(new Set(triviaQuestions.map(q => q.category)))
+      .map(category => ({
+        id: category.toLowerCase(),
+        label: category
+      }));
+    setAvailableCategories(categories);
+  }, []);
 
   const handleCategoryToggle = (category: string) => {
     setSelectedCategories(prev => {
@@ -59,7 +62,7 @@ const StartScreen: React.FC<StartScreenProps> = ({ onStartGame }) => {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8 max-w-2xl">
-        {CATEGORIES.map(({ id, label, icon }) => (
+        {availableCategories.map(({ id, label }) => (
           <div
             key={id}
             className={`flex items-center space-x-3 rounded-lg border p-4 transition-colors cursor-pointer ${

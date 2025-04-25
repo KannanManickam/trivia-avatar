@@ -19,6 +19,7 @@ const GameContainer: React.FC = () => {
   const handleStartGame = (categories: string[]) => {
     setSelectedCategories(categories);
     setGameState(GameState.PLAYING);
+    setScore(0); // Reset score when starting a new game
   };
 
   const handleGameEnd = (finalScore: number, questionCount: number) => {
