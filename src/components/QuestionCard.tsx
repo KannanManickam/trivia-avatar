@@ -2,7 +2,10 @@
 import React, { useEffect, useState } from 'react';
 import { TriviaQuestion } from '../data/questions';
 import TextToSpeechService from '../services/TextToSpeechService';
+import SpeechRecognitionService from '../services/SpeechRecognitionService';
 import Timer from './Timer';
+import { Mic, MicOff } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface QuestionCardProps {
   question: TriviaQuestion;
@@ -20,7 +23,9 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [revealAnswer, setRevealAnswer] = useState(false);
   const [hasAnswered, setHasAnswered] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const ttsService = TextToSpeechService.getInstance();
+  const speechRecognition = SpeechRecognitionService.getInstance();
 
   useEffect(() => {
     setSelectedOption(null);
@@ -28,13 +33,41 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
     setHasAnswered(false);
     
     // Read the question with TTS
-    const questionText = `${question.question}. Options: ${question.options.join(", ")}`;
+    const questionText = `${question.question}. Options: ${question.options.map((option, index) => 
+      `Option ${String.fromCharCode(65 + index)}: ${option}`
+    ).join(", ")}. Please say A, B, C, or D to answer.`;
     ttsService.speak(questionText);
     
     return () => {
       ttsService.stop();
     };
   }, [question]);
+
+  const handleVoiceInput = () => {
+    if (!speechRecognition.isSupported() || hasAnswered) return;
+
+    setIsListening(true);
+    speechRecognition.startListening(
+      (text) => {
+        setIsListening(false);
+        const optionMap: { [key: string]: number } = {
+          'a': 0, 'b': 1, 'c': 2, 'd': 3,
+          'option a': 0, 'option b': 1, 'option c': 2, 'option d': 3
+        };
+
+        const selectedIndex = optionMap[text.toLowerCase()];
+        if (selectedIndex !== undefined && selectedIndex < question.options.length) {
+          handleOptionClick(selectedIndex);
+        } else {
+          ttsService.speak("Please say A, B, C, or D to select your answer.");
+        }
+      },
+      (error) => {
+        console.error('Speech recognition error:', error);
+        setIsListening(false);
+      }
+    );
+  };
 
   const handleOptionClick = (index: number) => {
     if (hasAnswered) return;
@@ -77,6 +110,17 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
         onTimeUp={handleTimeUp} 
         isActive={!hasAnswered} 
       />
+      
+      <div className="text-center my-4">
+        <Button
+          onClick={handleVoiceInput}
+          disabled={hasAnswered || !speechRecognition.isSupported()}
+          className="game-button mb-4"
+        >
+          {isListening ? <MicOff className="mr-2" /> : <Mic className="mr-2" />}
+          {isListening ? 'Listening...' : 'Speak Your Answer'}
+        </Button>
+      </div>
       
       <div className="mt-6">
         {question.options.map((option, index) => {

@@ -2,9 +2,11 @@
 import React, { useState, useEffect } from 'react';
 import Avatar from './Avatar';
 import TextToSpeechService from '../services/TextToSpeechService';
+import SpeechRecognitionService from '../services/SpeechRecognitionService';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { triviaQuestions } from '../data/questions';
+import { Mic, MicOff } from 'lucide-react';
 
 interface StartScreenProps {
   onStartGame: (categories: string[]) => void;
@@ -12,10 +14,11 @@ interface StartScreenProps {
 
 const StartScreen: React.FC<StartScreenProps> = ({ onStartGame }) => {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const tts = TextToSpeechService.getInstance();
+  const [isListening, setIsListening] = useState(false);
   const [availableCategories, setAvailableCategories] = useState<{id: string, label: string}[]>([]);
+  const tts = TextToSpeechService.getInstance();
+  const speechRecognition = SpeechRecognitionService.getInstance();
 
-  // Extract unique categories from question data
   useEffect(() => {
     const categories = Array.from(new Set(triviaQuestions.map(q => q.category)))
       .map(category => ({
@@ -23,26 +26,62 @@ const StartScreen: React.FC<StartScreenProps> = ({ onStartGame }) => {
         label: category
       }));
     setAvailableCategories(categories);
+
+    // Initial greeting
+    tts.speak("Welcome to Quizzy Avatar Showdown! You can select up to 3 categories. Say the category name to select it. Say 'start game' when you're ready.");
   }, []);
+
+  const handleVoiceInput = () => {
+    if (!speechRecognition.isSupported()) {
+      tts.speak("Sorry, speech recognition is not supported in your browser.");
+      return;
+    }
+
+    setIsListening(true);
+    speechRecognition.startListening(
+      (text) => {
+        if (text.includes('start game')) {
+          if (selectedCategories.length === 0) {
+            tts.speak("Please select at least one category before starting the game.");
+          } else {
+            handleStart();
+          }
+        } else {
+          const matchedCategory = availableCategories.find(
+            cat => text.includes(cat.id)
+          );
+
+          if (matchedCategory) {
+            handleCategoryToggle(matchedCategory.id);
+          } else {
+            tts.speak("I didn't catch that. Please try again with a valid category name.");
+          }
+        }
+        setIsListening(false);
+      },
+      (error) => {
+        console.error('Speech recognition error:', error);
+        setIsListening(false);
+      }
+    );
+  };
 
   const handleCategoryToggle = (category: string) => {
     setSelectedCategories(prev => {
       if (prev.includes(category)) {
+        tts.speak(`Removed ${category}`);
         return prev.filter(c => c !== category);
       }
       if (prev.length >= 3) {
         tts.speak("You can only select up to 3 categories");
         return prev;
       }
+      tts.speak(`Selected ${category}`);
       return [...prev, category];
     });
   };
 
   const handleStart = () => {
-    if (selectedCategories.length === 0) {
-      tts.speak("Please select at least one category to begin");
-      return;
-    }
     tts.speak("Let's begin the game! Are you ready?");
     setTimeout(() => onStartGame(selectedCategories), 1500);
   };
@@ -86,6 +125,15 @@ const StartScreen: React.FC<StartScreenProps> = ({ onStartGame }) => {
       
       <div className="space-y-4">
         <Button 
+          onClick={handleVoiceInput}
+          className="game-button text-lg px-10 py-4 mr-4"
+          disabled={!speechRecognition.isSupported()}
+        >
+          {isListening ? <MicOff className="mr-2" /> : <Mic className="mr-2" />}
+          {isListening ? 'Listening...' : 'Speak'}
+        </Button>
+
+        <Button 
           onClick={handleStart}
           className="game-button text-lg px-10 py-4"
           disabled={selectedCategories.length === 0}
@@ -94,7 +142,7 @@ const StartScreen: React.FC<StartScreenProps> = ({ onStartGame }) => {
         </Button>
         
         <p className="text-xs text-gray-400">
-          Select up to 3 categories and press start to begin your trivia challenge
+          Select up to 3 categories by voice or click, then say "start game" or press the button
         </p>
       </div>
     </div>
