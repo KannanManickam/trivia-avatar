@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import Avatar from './Avatar';
 import TextToSpeechService from '../services/TextToSpeechService';
@@ -28,18 +27,27 @@ const StartScreen: React.FC<StartScreenProps> = ({ onStartGame }) => {
     setAvailableCategories(categories);
 
     // Initial greeting
-    tts.speak("Welcome to Quizzy Avatar Showdown! You can select up to 3 categories. Say the category name to select it. Say 'start game' when you're ready.");
+    tts.speak("Welcome to Quizzy Avatar Showdown! You can select categories by saying their names. Say 'start game' when you're ready.");
+    
+    // Start listening immediately
+    startVoiceRecognition();
+
+    // Cleanup
+    return () => {
+      speechRecognition.stopListening();
+    };
   }, []);
 
-  const handleVoiceInput = () => {
+  const startVoiceRecognition = () => {
     if (!speechRecognition.isSupported()) {
       tts.speak("Sorry, speech recognition is not supported in your browser.");
       return;
     }
 
-    setIsListening(true);
     speechRecognition.startListening(
       (text) => {
+        console.log('User said:', text); // Debug log
+        
         if (text.includes('start game')) {
           if (selectedCategories.length === 0) {
             tts.speak("Please select at least one category before starting the game.");
@@ -57,11 +65,11 @@ const StartScreen: React.FC<StartScreenProps> = ({ onStartGame }) => {
             tts.speak("I didn't catch that. Please try again with a valid category name.");
           }
         }
-        setIsListening(false);
       },
       (error) => {
         console.error('Speech recognition error:', error);
-        setIsListening(false);
+        // Restart listening after error
+        startVoiceRecognition();
       }
     );
   };
@@ -125,15 +133,6 @@ const StartScreen: React.FC<StartScreenProps> = ({ onStartGame }) => {
       
       <div className="space-y-4">
         <Button 
-          onClick={handleVoiceInput}
-          className="game-button text-lg px-10 py-4 mr-4"
-          disabled={!speechRecognition.isSupported()}
-        >
-          {isListening ? <MicOff className="mr-2" /> : <Mic className="mr-2" />}
-          {isListening ? 'Listening...' : 'Speak'}
-        </Button>
-
-        <Button 
           onClick={handleStart}
           className="game-button text-lg px-10 py-4"
           disabled={selectedCategories.length === 0}
@@ -142,7 +141,7 @@ const StartScreen: React.FC<StartScreenProps> = ({ onStartGame }) => {
         </Button>
         
         <p className="text-xs text-gray-400">
-          Select up to 3 categories by voice or click, then say "start game" or press the button
+          Say category names to select them, then say "start game" to begin
         </p>
       </div>
     </div>

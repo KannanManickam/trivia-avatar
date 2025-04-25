@@ -1,4 +1,3 @@
-
 export class TextToSpeechService {
   private static instance: TextToSpeechService;
   private synth: SpeechSynthesis;
@@ -28,6 +27,9 @@ export class TextToSpeechService {
   private loadVoices(): void {
     this.voices = this.synth.getVoices();
     
+    // Add console log to debug voice loading
+    console.log('Available voices:', this.voices);
+    
     // Try to select a good default voice
     let preferredVoice = this.voices.find(voice => 
       voice.name.includes('Google') && voice.name.includes('US') && voice.name.includes('Female')
@@ -37,7 +39,19 @@ export class TextToSpeechService {
       preferredVoice = this.voices.find(voice => voice.lang === 'en-US');
     }
     
-    this.selectedVoice = preferredVoice || (this.voices.length > 0 ? this.voices[0] : null);
+    if (!preferredVoice && this.voices.length > 0) {
+      preferredVoice = this.voices[0];
+    }
+    
+    // Add console log to debug selected voice
+    console.log('Selected voice:', preferredVoice);
+    
+    this.selectedVoice = preferredVoice;
+
+    // If no voice is selected, try loading again after a short delay
+    if (!this.selectedVoice) {
+      setTimeout(() => this.loadVoices(), 100);
+    }
   }
 
   public getVoices(): SpeechSynthesisVoice[] {

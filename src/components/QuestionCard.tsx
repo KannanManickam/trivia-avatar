@@ -1,11 +1,10 @@
-
 import React, { useEffect, useState } from 'react';
 import { TriviaQuestion } from '../data/questions';
 import TextToSpeechService from '../services/TextToSpeechService';
 import SpeechRecognitionService from '../services/SpeechRecognitionService';
 import Timer from './Timer';
-import { Mic, MicOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Mic, MicOff } from 'lucide-react';
 
 interface QuestionCardProps {
   question: TriviaQuestion;
@@ -37,19 +36,22 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
       `Option ${String.fromCharCode(65 + index)}: ${option}`
     ).join(", ")}. Please say A, B, C, or D to answer.`;
     ttsService.speak(questionText);
-    
+
+    // Start listening immediately
+    startVoiceRecognition();
+
     return () => {
-      ttsService.stop();
+      speechRecognition.stopListening();
     };
   }, [question]);
 
-  const handleVoiceInput = () => {
+  const startVoiceRecognition = () => {
     if (!speechRecognition.isSupported() || hasAnswered) return;
 
-    setIsListening(true);
     speechRecognition.startListening(
       (text) => {
-        setIsListening(false);
+        console.log('User answer:', text); // Debug log
+        
         const optionMap: { [key: string]: number } = {
           'a': 0, 'b': 1, 'c': 2, 'd': 3,
           'option a': 0, 'option b': 1, 'option c': 2, 'option d': 3
@@ -58,13 +60,14 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
         const selectedIndex = optionMap[text.toLowerCase()];
         if (selectedIndex !== undefined && selectedIndex < question.options.length) {
           handleOptionClick(selectedIndex);
-        } else {
-          ttsService.speak("Please say A, B, C, or D to select your answer.");
         }
       },
       (error) => {
         console.error('Speech recognition error:', error);
-        setIsListening(false);
+        // Restart listening after error
+        if (!hasAnswered) {
+          startVoiceRecognition();
+        }
       }
     );
   };
@@ -110,17 +113,6 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
         onTimeUp={handleTimeUp} 
         isActive={!hasAnswered} 
       />
-      
-      <div className="text-center my-4">
-        <Button
-          onClick={handleVoiceInput}
-          disabled={hasAnswered || !speechRecognition.isSupported()}
-          className="game-button mb-4"
-        >
-          {isListening ? <MicOff className="mr-2" /> : <Mic className="mr-2" />}
-          {isListening ? 'Listening...' : 'Speak Your Answer'}
-        </Button>
-      </div>
       
       <div className="mt-6">
         {question.options.map((option, index) => {
