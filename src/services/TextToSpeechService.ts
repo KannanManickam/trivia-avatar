@@ -1,3 +1,4 @@
+
 export class TextToSpeechService {
   private static instance: TextToSpeechService;
   private synth: SpeechSynthesis;
@@ -6,15 +7,21 @@ export class TextToSpeechService {
   private onSpeakStartCallbacks: (() => void)[] = [];
   private onSpeakEndCallbacks: (() => void)[] = [];
   private isSpeaking: boolean = false;
+  private voicesLoaded: boolean = false;
+  private pendingSpeech: { text: string; rate?: number; pitch?: number }[] = [];
 
   private constructor() {
     this.synth = window.speechSynthesis;
-    this.loadVoices();
     
-    // Handle case where voices aren't loaded immediately
-    if (speechSynthesis.onvoiceschanged !== undefined) {
-      speechSynthesis.onvoiceschanged = this.loadVoices.bind(this);
+    // Chrome requires waiting for the voiceschanged event
+    if (this.synth.onvoiceschanged !== undefined) {
+      this.synth.onvoiceschanged = this.loadVoices.bind(this);
     }
+    
+    // Initial attempt to load voices
+    setTimeout(() => {
+      this.loadVoices();
+    }, 100);
   }
 
   public static getInstance(): TextToSpeechService {
@@ -25,32 +32,53 @@ export class TextToSpeechService {
   }
 
   private loadVoices(): void {
-    this.voices = this.synth.getVoices();
+    // Get all available voices
+    const availableVoices = this.synth.getVoices();
     
-    // Add console log to debug voice loading
-    console.log('Available voices:', this.voices);
-    
-    // Try to select a good default voice
-    let preferredVoice = this.voices.find(voice => 
-      voice.name.includes('Google') && voice.name.includes('US') && voice.name.includes('Female')
-    );
-    
-    if (!preferredVoice) {
-      preferredVoice = this.voices.find(voice => voice.lang === 'en-US');
-    }
-    
-    if (!preferredVoice && this.voices.length > 0) {
-      preferredVoice = this.voices[0];
-    }
-    
-    // Add console log to debug selected voice
-    console.log('Selected voice:', preferredVoice);
-    
-    this.selectedVoice = preferredVoice;
-
-    // If no voice is selected, try loading again after a short delay
-    if (!this.selectedVoice) {
-      setTimeout(() => this.loadVoices(), 100);
+    if (availableVoices.length > 0) {
+      this.voices = availableVoices;
+      console.log('Available voices loaded:', this.voices.length);
+      console.log('Voice examples:', this.voices.slice(0, 3).map(v => ({name: v.name, lang: v.lang})));
+      
+      // Try to select a good default voice
+      // First try to find a Google US English female voice
+      let preferredVoice = this.voices.find(voice => 
+        voice.name.includes('Google') && voice.name.includes('US') && voice.name.includes('Female')
+      );
+      
+      // If not found, try any US English voice
+      if (!preferredVoice) {
+        preferredVoice = this.voices.find(voice => voice.lang === 'en-US');
+      }
+      
+      // If still not found, try any English voice
+      if (!preferredVoice) {
+        preferredVoice = this.voices.find(voice => voice.lang.startsWith('en'));
+      }
+      
+      // Fallback to the first voice
+      if (!preferredVoice && this.voices.length > 0) {
+        preferredVoice = this.voices[0];
+      }
+      
+      this.selectedVoice = preferredVoice;
+      console.log('Selected voice:', this.selectedVoice ? 
+        { name: this.selectedVoice.name, lang: this.selectedVoice.lang } : 'No voice selected');
+      
+      this.voicesLoaded = true;
+      
+      // Process any pending speech requests
+      if (this.pendingSpeech.length > 0) {
+        console.log('Processing pending speech requests:', this.pendingSpeech.length);
+        this.pendingSpeech.forEach(speech => {
+          this.speak(speech.text, speech.rate, speech.pitch);
+        });
+        this.pendingSpeech = [];
+      }
+    } else {
+      console.warn('No voices available yet, will retry');
+      // In some browsers (particularly Chrome), voices might not be available immediately
+      setTimeout(() => this.loadVoices(), 500);
     }
   }
 
@@ -63,13 +91,16 @@ export class TextToSpeechService {
   }
 
   public speak(text: string, rate = 1, pitch = 1): void {
-    if (!this.selectedVoice) {
-      console.error("No voice selected for text-to-speech");
+    if (!this.voicesLoaded || !this.selectedVoice) {
+      console.log('Voices not loaded yet, queuing speech:', text);
+      this.pendingSpeech.push({ text, rate, pitch });
       return;
     }
 
     // Cancel any current speech
     this.stop();
+
+    console.log(`Speaking with voice: ${this.selectedVoice.name}:`, text);
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.voice = this.selectedVoice;
@@ -77,22 +108,43 @@ export class TextToSpeechService {
     utterance.pitch = pitch;
     
     utterance.onstart = () => {
+      console.log('Speech started:', text);
       this.isSpeaking = true;
       this.onSpeakStartCallbacks.forEach(callback => callback());
     };
     
     utterance.onend = () => {
+      console.log('Speech ended');
       this.isSpeaking = false;
       this.onSpeakEndCallbacks.forEach(callback => callback());
     };
 
-    this.synth.speak(utterance);
+    utterance.onerror = (event) => {
+      console.error('Speech error:', event);
+      this.isSpeaking = false;
+      this.onSpeakEndCallbacks.forEach(callback => callback());
+    };
+
+    // Fix for Chrome issue where speech might not start
+    this.synth.cancel();
+    setTimeout(() => {
+      this.synth.speak(utterance);
+      
+      // Sometimes, in Chrome, we need to kick start the speech synthesis
+      if (!this.synth.speaking && !this.synth.pending) {
+        console.log('Speech synthesis not starting, attempting to restart');
+        this.synth.cancel();
+        setTimeout(() => this.synth.speak(utterance), 50);
+      }
+    }, 50);
   }
 
   public stop(): void {
-    this.synth.cancel();
-    this.isSpeaking = false;
-    this.onSpeakEndCallbacks.forEach(callback => callback());
+    if (this.synth) {
+      this.synth.cancel();
+      this.isSpeaking = false;
+      this.onSpeakEndCallbacks.forEach(callback => callback());
+    }
   }
 
   public onSpeakStart(callback: () => void): void {
