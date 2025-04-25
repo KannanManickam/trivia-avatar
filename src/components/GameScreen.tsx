@@ -16,7 +16,7 @@ const GameScreen: React.FC<GameScreenProps> = ({
   onGameEnd, 
   categories,
   questionCount = 10,
-  timePerQuestion = 12
+  timePerQuestion = 30
 }) => {
   const [questions, setQuestions] = useState<TriviaQuestion[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
