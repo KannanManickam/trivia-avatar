@@ -1,4 +1,3 @@
-
 export class TextToSpeechService {
   private static instance: TextToSpeechService;
   private synth: SpeechSynthesis;
@@ -10,7 +9,9 @@ export class TextToSpeechService {
   private voicesLoaded: boolean = false;
   private pendingSpeech: { text: string; rate?: number; pitch?: number }[] = [];
   private voiceLoadAttempts: number = 0;
-  private maxVoiceLoadAttempts: number = 10;
+  private maxVoiceLoadAttempts: number = 20; // Increased attempts
+  private chromeWorkaroundTimer: number | null = null;
+  private resumeContextCheckInterval: number | null = null;
 
   private constructor() {
     this.synth = window.speechSynthesis;
@@ -22,6 +23,20 @@ export class TextToSpeechService {
     
     // Initial attempt to load voices
     this.attemptLoadVoices();
+    
+    // Periodically check if Chrome has paused speech synthesis context
+    this.setupChromeSpeechWorkaround();
+  }
+
+  private setupChromeSpeechWorkaround(): void {
+    // Chrome has a bug where it pauses speech synthesis context after ~15 seconds of inactivity
+    // This keeps the speech context active
+    this.resumeContextCheckInterval = window.setInterval(() => {
+      if (this.synth && !this.isSpeaking) {
+        console.log("Keeping speech synthesis context alive");
+        this.synth.cancel(); // This activates the speech context without making sound
+      }
+    }, 10000); // Check every 10 seconds
   }
 
   private attemptLoadVoices(): void {
@@ -53,10 +68,12 @@ export class TextToSpeechService {
       console.log('Available voices loaded:', this.voices.length);
       console.log('Voice examples:', this.voices.slice(0, 3).map(v => ({name: v.name, lang: v.lang})));
       
-      // Try to select a good default voice
-      // First try to find a Google US English female voice
-      let preferredVoice = this.voices.find(voice => 
-        voice.name.includes('Google') && voice.name.includes('US') && voice.name.includes('Female')
+      // Try to select a good default voice - Chrome voices compatibility
+      let preferredVoice = null;
+      
+      // First try to find a Google US English voice
+      preferredVoice = this.voices.find(voice => 
+        voice.name.includes('Google') && voice.lang.includes('en-US')
       );
       
       // If not found, try any US English voice
@@ -103,10 +120,14 @@ export class TextToSpeechService {
 
   public setVoice(voice: SpeechSynthesisVoice): void {
     this.selectedVoice = voice;
+    console.log('Voice changed to:', voice.name);
   }
 
   public speak(text: string, rate = 1, pitch = 1): void {
     console.log('Speak requested:', text.substring(0, 50) + (text.length > 50 ? '...' : ''));
+    
+    // Force activation of audio context in Chrome
+    this.activateAudioContext();
     
     if (!this.voicesLoaded || !this.selectedVoice) {
       console.log('Voices not loaded yet, queuing speech:', text.substring(0, 50) + (text.length > 50 ? '...' : ''));
@@ -122,6 +143,25 @@ export class TextToSpeechService {
     }
 
     this.speakImmediate(text, rate, pitch);
+  }
+
+  // Force activation of audio context for Chrome
+  private activateAudioContext(): void {
+    try {
+      // Create and immediately close an AudioContext to unlock audio in Chrome
+      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioContext) {
+        const audioCtx = new AudioContext();
+        audioCtx.resume().then(() => {
+          console.log("AudioContext activated");
+          setTimeout(() => {
+            audioCtx.close();
+          }, 1000);
+        });
+      }
+    } catch (e) {
+      console.error("Failed to activate audio context:", e);
+    }
   }
 
   private speakImmediate(text: string, rate = 1, pitch = 1): void {
@@ -143,12 +183,38 @@ export class TextToSpeechService {
     utterance.onstart = () => {
       console.log('Speech started:', text.substring(0, 50) + (text.length > 50 ? '...' : ''));
       this.isSpeaking = true;
+      
+      // Clear any existing Chrome workaround timer
+      if (this.chromeWorkaroundTimer !== null) {
+        clearInterval(this.chromeWorkaroundTimer);
+        this.chromeWorkaroundTimer = null;
+      }
+      
       this.onSpeakStartCallbacks.forEach(callback => callback());
+      
+      // Chrome bug: speech can stop unexpectedly if utterance is long
+      // Set up periodic resume to keep it going
+      const isChrome = /Chrome/.test(navigator.userAgent) && !/Edge/.test(navigator.userAgent);
+      if (isChrome && text.length > 100) {
+        this.chromeWorkaroundTimer = window.setInterval(() => {
+          if (this.synth.paused) {
+            console.log("Detected paused speech, resuming...");
+            this.synth.resume();
+          }
+        }, 1000);
+      }
     };
     
     utterance.onend = () => {
       console.log('Speech ended');
       this.isSpeaking = false;
+      
+      // Clear Chrome workaround timer if it exists
+      if (this.chromeWorkaroundTimer !== null) {
+        clearInterval(this.chromeWorkaroundTimer);
+        this.chromeWorkaroundTimer = null;
+      }
+      
       this.onSpeakEndCallbacks.forEach(callback => callback());
       
       // Process next queued speech item if any
@@ -158,11 +224,24 @@ export class TextToSpeechService {
     utterance.onerror = (event) => {
       console.error('Speech error:', event);
       this.isSpeaking = false;
+      
+      // Clear Chrome workaround timer if it exists
+      if (this.chromeWorkaroundTimer !== null) {
+        clearInterval(this.chromeWorkaroundTimer);
+        this.chromeWorkaroundTimer = null;
+      }
+      
       this.onSpeakEndCallbacks.forEach(callback => callback());
       
       // Try to recover from error by processing next speech
       setTimeout(() => this.processPendingSpeech(), 500);
     };
+
+    // Chrome fix for long utterances getting cut off
+    const isLongText = text.length > 200;
+    if (isLongText) {
+      console.log("Long text detected, applying Chrome workaround");
+    }
 
     // Fix for Chrome issue where speech might not start
     setTimeout(() => {
@@ -195,6 +274,34 @@ export class TextToSpeechService {
             
             // Try speaking again
             this.synth.speak(newUtterance);
+            
+            // Double-check and force Chrome to speak
+            setTimeout(() => {
+              if (!this.synth.speaking && !this.isSpeaking) {
+                console.log("Still not speaking, trying more aggressive approach for Chrome");
+                
+                // Try a different voice as last resort
+                const differentVoice = this.voices.find(v => v !== this.selectedVoice) || this.voices[0];
+                
+                const finalUtterance = new SpeechSynthesisUtterance(text);
+                finalUtterance.voice = differentVoice;
+                finalUtterance.rate = rate;
+                finalUtterance.pitch = pitch;
+                finalUtterance.volume = 1.0;
+                finalUtterance.onstart = utterance.onstart;
+                finalUtterance.onend = utterance.onend;
+                finalUtterance.onerror = utterance.onerror;
+                
+                // Play a silent sound first to wake up audio context
+                const silentUtterance = new SpeechSynthesisUtterance(" ");
+                this.synth.speak(silentUtterance);
+                
+                // Then speak the actual text
+                setTimeout(() => {
+                  this.synth.speak(finalUtterance);
+                }, 100);
+              }
+            }, 500);
           }
         }, 250);
       } catch (error) {
@@ -206,9 +313,17 @@ export class TextToSpeechService {
 
   public stop(): void {
     if (this.synth) {
+      console.log("Stopping all speech");
       this.synth.cancel();
       this.isSpeaking = false;
       this.pendingSpeech = []; // Clear any pending speech
+      
+      // Clear Chrome workaround timer if it exists
+      if (this.chromeWorkaroundTimer !== null) {
+        clearInterval(this.chromeWorkaroundTimer);
+        this.chromeWorkaroundTimer = null;
+      }
+      
       this.onSpeakEndCallbacks.forEach(callback => callback());
     }
   }
